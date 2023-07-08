@@ -36,6 +36,7 @@ fn handle_connection(mut stream: TcpStream) {
 
         stream.write_all(response.as_bytes()).unwrap();
     } else {
-        println!("We have a request with another method")
+        let response = format!("HTTP/1.1 404 NOT FOUND\r\n");
+        stream.write_all(response.as_bytes()).unwrap();
     }
 }
