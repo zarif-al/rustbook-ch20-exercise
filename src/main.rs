@@ -24,10 +24,9 @@ fn handle_connection(mut stream: TcpStream) {
     let request_route = request_line.next().unwrap();
 
     if request_method == "GET" {
-        let (status_line, filename) = if request_route == "/" {
-            ("HTTP/1.1 200 OK", "hello.html")
-        } else {
-            ("HTTP/1.1 404 NOT FOUND", "404.html")
+        let (status_line, filename) = match request_route {
+            "/" => ("HTTP/1.1 200 OK", "hello.html"),
+            _ => ("HTTP/1.1 404 NOT FOUND", "404.html"),
         };
 
         let contents = fs::read_to_string(filename).unwrap();
