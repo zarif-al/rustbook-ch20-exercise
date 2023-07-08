@@ -7,7 +7,7 @@ type Job = Box<dyn FnOnce() + Send + 'static>;
 
 pub struct ThreadPool {
     workers: Vec<Worker>,
-    sender: mpsc::Sender<Job>,
+    sender: Option<mpsc::Sender<Job>>,
 }
 
 impl ThreadPool {
@@ -29,7 +29,10 @@ impl ThreadPool {
             workers.push(Worker::new(index, Arc::clone(&receiver)));
         }
 
-        ThreadPool { workers, sender }
+        ThreadPool {
+            workers,
+            sender: Some(sender),
+        }
     }
 
     pub fn execute<F>(&self, f: F)
@@ -38,25 +41,47 @@ impl ThreadPool {
     {
         let job = Box::new(f);
 
-        self.sender.send(job).unwrap();
+        self.sender.as_ref().unwrap().send(job).unwrap();
+    }
+}
+
+impl Drop for ThreadPool {
+    fn drop(&mut self) {
+        drop(self.sender.take());
+        for worker in &mut self.workers {
+            if let Some(thread) = worker.handle.take() {
+                println!("Shutting down worker {}", worker.id);
+                thread.join().unwrap();
+            }
+        }
     }
 }
 
 struct Worker {
     id: usize,
-    handle: thread::JoinHandle<()>,
+    handle: Option<thread::JoinHandle<()>>,
 }
 
 impl Worker {
     fn new(id: usize, receiver: Arc<Mutex<mpsc::Receiver<Job>>>) -> Worker {
         Worker {
-            handle: thread::spawn(move || loop {
-                let job = receiver.lock().unwrap().recv().unwrap();
+            handle: Some(thread::spawn(move || loop {
+                let message = receiver.lock().unwrap().recv();
 
-                println!("Worker {id} got a job; executing.");
+                match message {
+                    Ok(job) => {
+                        println!("Worker {id} got a job; executing.");
 
-                job();
-            }),
+                        job();
+
+                        println!("Worker {id} job complete.");
+                    }
+                    Err(_) => {
+                        println!("Worker {id} disconnected; shutting down.");
+                        break;
+                    }
+                }
+            })),
             id,
         }
     }
